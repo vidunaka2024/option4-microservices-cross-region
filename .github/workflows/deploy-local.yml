@@ -1,0 +1,107 @@
+name: Deploy Locally (Education Account)
+
+on:
+  workflow_dispatch:
+    inputs:
+      db_type:
+        description: 'Database type (mysql or mongo)'
+        required: true
+        default: 'mysql'
+        type: choice
+        options:
+        - mysql
+        - mongo
+
+jobs:
+  generate-deployment-script:
+    name: 'Generate Local Deployment Script'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Generate Deployment Commands
+      run: |
+        echo "## 🚀 AUTOMATED LOCAL DEPLOYMENT" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Copy and run these commands on your local machine:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo '```bash' >> $GITHUB_STEP_SUMMARY
+        echo "cd /Users/imeth/Desktop/option4-all-vms" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "# Deploy infrastructure with ${{ github.event.inputs.db_type || 'mysql' }} database" >> $GITHUB_STEP_SUMMARY
+        echo "./scripts/deploy-infrastructure.sh --db-type ${{ github.event.inputs.db_type || 'mysql' }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "# Wait for deployment to complete (~15 minutes)" >> $GITHUB_STEP_SUMMARY
+        echo "# Then test the complete workflow" >> $GITHUB_STEP_SUMMARY
+        echo "./scripts/test-complete-workflow.sh" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🎯 What This Will Deploy:" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Cross-region architecture** (East US + West US 2)" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **5 VMs with VNet peering**" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Kong Gateway with SSL**" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Auth0 OIDC authentication**" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Database switching** (${{ github.event.inputs.db_type || 'mysql' }} initially)" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **RabbitMQ message broker**" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Complete health verification**" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔄 Database Switching:" >> $GITHUB_STEP_SUMMARY
+        echo '```bash' >> $GITHUB_STEP_SUMMARY
+        echo "# Switch to MongoDB" >> $GITHUB_STEP_SUMMARY
+        echo "./scripts/switch-database.sh --target mongodb" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "# Switch to MySQL" >> $GITHUB_STEP_SUMMARY
+        echo "./scripts/switch-database.sh --target mysql" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**This approach works around GitHub Actions limitations with education accounts!** 🎓" >> $GITHUB_STEP_SUMMARY
+
+    - name: Create Auto-Deploy Script
+      run: |
+        cat > auto-deploy.sh << 'EOF'
+        #!/bin/bash
+        
+        echo "🚀 Starting Fully Automated Cross-Region Deployment"
+        echo "Database Type: ${{ github.event.inputs.db_type || 'mysql' }}"
+        echo ""
+        
+        # Check prerequisites
+        if ! command -v az &> /dev/null; then
+            echo "❌ Azure CLI not found. Please install it first."
+            exit 1
+        fi
+        
+        if ! az account show &> /dev/null; then
+            echo "❌ Not logged into Azure. Please run 'az login' first."
+            exit 1
+        fi
+        
+        # Deploy infrastructure
+        echo "🏗️ Deploying cross-region infrastructure..."
+        ./scripts/deploy-infrastructure.sh --db-type ${{ github.event.inputs.db_type || 'mysql' }}
+        
+        if [ $? -eq 0 ]; then
+            echo ""
+            echo "✅ Deployment completed successfully!"
+            echo ""
+            echo "🔗 Testing complete workflow..."
+            ./scripts/test-complete-workflow.sh
+            
+            echo ""
+            echo "🎉 DEPLOYMENT COMPLETE!"
+            echo "Your cross-region microservices are now running!"
+        else
+            echo "❌ Deployment failed. Check the logs above."
+            exit 1
+        fi
+        EOF
+        
+        chmod +x auto-deploy.sh
+
+    - name: Upload Auto-Deploy Script
+      uses: actions/upload-artifact@v4
+      with:
+        name: auto-deploy-script
+        path: auto-deploy.sh

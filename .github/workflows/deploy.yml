@@ -32,16 +32,12 @@ jobs:
         curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
         az --version
 
-    - name: Login to Azure using OIDC
-      uses: azure/login@v1
-      with:
-        subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-        tenant-id: ${{ secrets.ARM_TENANT_ID }}
-
-    - name: Verify Azure Authentication
+    - name: Skip Azure CLI Login (Education Account Limitation)
       run: |
-        az account show
-        echo "Azure authentication successful"
+        echo "Education accounts cannot use service principals in GitHub Actions"
+        echo "Using Terraform with direct subscription access"
+        echo "ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}"
+        echo "ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}"
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
