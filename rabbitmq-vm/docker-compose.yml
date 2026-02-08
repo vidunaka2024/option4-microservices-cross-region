@@ -1,0 +1,20 @@
+# rabbitmq-vm/docker-compose.yml
+# Central RabbitMQ broker - all microservices connect to this VM
+# Accessible via Azure private network on port 5672
+
+version: '3.8'
+
+services:
+  rmq-broker:
+    image: rabbitmq:3-management
+    container_name: rmq-broker
+    restart: always
+    ports:
+      - "5672:5672"    # AMQP - used by all microservices
+      - "15672:15672"  # Management UI
+    networks:
+      - rmq-network
+
+networks:
+  rmq-network:
+    driver: bridge

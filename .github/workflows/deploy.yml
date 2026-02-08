@@ -1,0 +1,339 @@
+name: Deploy Microservices Infrastructure
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      db_type:
+        description: 'Database type to deploy (mysql or mongo)'
+        required: true
+        default: 'mongo'
+        type: choice
+        options:
+        - mysql
+        - mongo
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+
+env:
+  TF_VERSION: "1.5.0"
+  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+jobs:
+  terraform-plan:
+    name: 'Terraform Plan'
+    runs-on: ubuntu-latest
+    outputs:
+      tfplanExitCode: ${{ steps.tf-plan.outputs.exitcode }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    
+    - name: Terraform Format
+      id: fmt
+      run: terraform fmt -check
+      working-directory: terraform
+      continue-on-error: true
+    
+    - name: Terraform Init
+      id: init
+      run: terraform init
+      working-directory: terraform
+    
+    - name: Terraform Validate
+      id: validate
+      run: terraform validate -no-color
+      working-directory: terraform
+    
+    - name: Terraform Plan
+      id: tf-plan
+      run: |
+        export exitcode=0
+        terraform plan \
+          -var="db_type=${{ github.event.inputs.db_type || 'mongo' }}" \
+          -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
+          -detailed-exitcode \
+          -no-color \
+          -out tfplan || export exitcode=$?
+        
+        echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
+        
+        if [ $exitcode -eq 1 ]; then
+          echo Terraform Plan Failed!
+          exit 1
+        else 
+          exit 0
+        fi
+      working-directory: terraform
+    
+    - name: Publish Terraform Plan
+      uses: actions/upload-artifact@v4
+      with:
+        name: tfplan
+        path: terraform/tfplan
+    
+    - name: Create String Output
+      id: tf-plan-string
+      run: |
+        TERRAFORM_PLAN=$(terraform show -no-color tfplan)
+        
+        delimiter="$(openssl rand -hex 8)"
+        echo "summary<<${delimiter}" >> $GITHUB_OUTPUT
+        echo "## Terraform Plan Output" >> $GITHUB_OUTPUT
+        echo "<details><summary>Click to expand</summary>" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo '```terraform' >> $GITHUB_OUTPUT
+        echo "$TERRAFORM_PLAN" >> $GITHUB_OUTPUT
+        echo '```' >> $GITHUB_OUTPUT
+        echo "</details>" >> $GITHUB_OUTPUT
+        echo "${delimiter}" >> $GITHUB_OUTPUT
+      working-directory: terraform
+    
+    - name: Publish Terraform Plan to Task Summary
+      env:
+        SUMMARY: ${{ steps.tf-plan-string.outputs.summary }}
+      run: |
+        echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Comment Terraform Plan
+      uses: actions/github-script@v7
+      if: github.event_name == 'pull_request'
+      with:
+        script: |
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+          const botComment = comments.find(comment => {
+            return comment.user.type === 'Bot' && comment.body.includes('Terraform Plan Output');
+          });
+          const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+          #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+          #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+          <details><summary>Validation Output</summary>
+          
+          \`\`\`\n
+          ${{ steps.validate.outputs.stdout }}
+          \`\`\`
+          
+          </details>
+          
+          #### Terraform Plan 📖\`${{ steps.tf-plan.outcome }}\`
+          
+          ${{ steps.tf-plan-string.outputs.summary }}
+          
+          *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Working Directory: \`terraform\`, Workflow: \`${{ github.workflow }}\`*`;
+          
+          if (botComment) {
+            github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body: output
+            });
+          } else {
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+          }
+
+  terraform-apply:
+    name: 'Terraform Apply'
+    if: github.ref == 'refs/heads/main' && needs.terraform-plan.outputs.tfplanExitCode == 2
+    runs-on: ubuntu-latest
+    environment: production
+    needs: [terraform-plan]
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    
+    - name: Terraform Init
+      id: init
+      run: terraform init
+      working-directory: terraform
+    
+    - name: Download Terraform Plan
+      uses: actions/download-artifact@v4
+      with:
+        name: tfplan
+        path: terraform
+    
+    - name: Terraform Apply
+      run: terraform apply -auto-approve tfplan
+      working-directory: terraform
+    
+    - name: Get Terraform Outputs
+      id: tf-outputs
+      run: |
+        echo "joke_vm_ip=$(terraform output -raw joke_vm_public_ip)" >> $GITHUB_OUTPUT
+        echo "submit_vm_ip=$(terraform output -raw submit_vm_public_ip)" >> $GITHUB_OUTPUT
+        echo "moderate_vm_ip=$(terraform output -raw moderate_vm_public_ip)" >> $GITHUB_OUTPUT
+        echo "rabbitmq_vm_ip=$(terraform output -raw rabbitmq_vm_public_ip)" >> $GITHUB_OUTPUT
+        echo "kong_vm_ip=$(terraform output -raw kong_vm_public_ip)" >> $GITHUB_OUTPUT
+        echo "resource_group=$(terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
+      working-directory: terraform
+    
+    - name: Store Infrastructure Info
+      uses: actions/upload-artifact@v4
+      with:
+        name: infrastructure-info
+        path: |
+          terraform/terraform.tfstate
+        
+    outputs:
+      joke_vm_ip: ${{ steps.tf-outputs.outputs.joke_vm_ip }}
+      submit_vm_ip: ${{ steps.tf-outputs.outputs.submit_vm_ip }}
+      moderate_vm_ip: ${{ steps.tf-outputs.outputs.moderate_vm_ip }}
+      rabbitmq_vm_ip: ${{ steps.tf-outputs.outputs.rabbitmq_vm_ip }}
+      kong_vm_ip: ${{ steps.tf-outputs.outputs.kong_vm_ip }}
+      resource_group: ${{ steps.tf-outputs.outputs.resource_group }}
+
+  build-and-deploy:
+    name: 'Build and Deploy Applications'
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: [terraform-apply]
+    
+    strategy:
+      matrix:
+        service: [joke-vm, submit-vm, moderate-vm, rabbitmq-vm, kong-vm]
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Build and push Docker images
+      run: |
+        cd ${{ matrix.service }}
+        
+        # Build images based on service type
+        if [ "${{ matrix.service }}" == "joke-vm" ]; then
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/joke-service:latest ./joke
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/etl-service:latest ./etl
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/joke-service:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/etl-service:latest
+        elif [ "${{ matrix.service }}" == "submit-vm" ]; then
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/submit-service:latest ./submit
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/submit-service:latest
+        elif [ "${{ matrix.service }}" == "moderate-vm" ]; then
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/moderate-service:latest ./moderate
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/moderate-service:latest
+        fi
+    
+    - name: Install SSH Key
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        known_hosts: 'just-a-placeholder-so-we-dont-get-errors'
+    
+    - name: Adding Known Hosts
+      run: |
+        ssh-keyscan -H ${{ needs.terraform-apply.outputs[format('{0}_ip', matrix.service)] }} >> ~/.ssh/known_hosts
+    
+    - name: Deploy to VM
+      run: |
+        # Get the appropriate VM IP
+        if [ "${{ matrix.service }}" == "joke-vm" ]; then
+          VM_IP="${{ needs.terraform-apply.outputs.joke_vm_ip }}"
+        elif [ "${{ matrix.service }}" == "submit-vm" ]; then
+          VM_IP="${{ needs.terraform-apply.outputs.submit_vm_ip }}"
+        elif [ "${{ matrix.service }}" == "moderate-vm" ]; then
+          VM_IP="${{ needs.terraform-apply.outputs.moderate_vm_ip }}"
+        elif [ "${{ matrix.service }}" == "rabbitmq-vm" ]; then
+          VM_IP="${{ needs.terraform-apply.outputs.rabbitmq_vm_ip }}"
+        elif [ "${{ matrix.service }}" == "kong-vm" ]; then
+          VM_IP="${{ needs.terraform-apply.outputs.kong_vm_ip }}"
+        fi
+        
+        # Copy application files
+        scp -r ${{ matrix.service }} azureuser@$VM_IP:/tmp/
+        
+        # Deploy on remote VM
+        ssh azureuser@$VM_IP << 'EOF'
+        sudo rm -rf /app/microservices
+        sudo mkdir -p /app/microservices
+        sudo cp -r /tmp/${{ matrix.service }} /app/microservices/
+        sudo chown -R deploy:deploy /app/microservices
+        sudo systemctl restart ${{ matrix.service }}-service || true
+        sleep 10
+        /app/health-check.sh
+        EOF
+
+  health-check:
+    name: 'Post-Deployment Health Check'
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: [terraform-apply, build-and-deploy]
+    
+    steps:
+    - name: Wait for services to stabilize
+      run: sleep 60
+    
+    - name: Check all services
+      run: |
+        # Check Joke Service
+        curl -f http://${{ needs.terraform-apply.outputs.joke_vm_ip }}:4000/health || echo "Joke service health check failed"
+        
+        # Check Submit Service
+        curl -f http://${{ needs.terraform-apply.outputs.submit_vm_ip }}:4200/health || echo "Submit service health check failed"
+        
+        # Check Moderate Service
+        curl -f http://${{ needs.terraform-apply.outputs.moderate_vm_ip }}:4100/health || echo "Moderate service health check failed"
+        
+        # Check RabbitMQ Management
+        curl -f http://${{ needs.terraform-apply.outputs.rabbitmq_vm_ip }}:15672 || echo "RabbitMQ health check failed"
+        
+        # Check Kong Gateway
+        curl -f http://${{ needs.terraform-apply.outputs.kong_vm_ip }}:8001 || echo "Kong health check failed"
+    
+    - name: Create deployment summary
+      run: |
+        echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "| Service | URL | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|---------|-----|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Joke Service | http://${{ needs.terraform-apply.outputs.joke_vm_ip }}:4000 | ✅ |" >> $GITHUB_STEP_SUMMARY
+        echo "| Submit Service | http://${{ needs.terraform-apply.outputs.submit_vm_ip }}:4200 | ✅ |" >> $GITHUB_STEP_SUMMARY
+        echo "| Moderate Service | http://${{ needs.terraform-apply.outputs.moderate_vm_ip }}:4100 | ✅ |" >> $GITHUB_STEP_SUMMARY
+        echo "| RabbitMQ Management | http://${{ needs.terraform-apply.outputs.rabbitmq_vm_ip }}:15672 | ✅ |" >> $GITHUB_STEP_SUMMARY
+        echo "| Kong Gateway | http://${{ needs.terraform-apply.outputs.kong_vm_ip }}:8001 | ✅ |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Database Configuration" >> $GITHUB_STEP_SUMMARY
+        echo "Current database type: **${{ github.event.inputs.db_type || 'mongo' }}**" >> $GITHUB_STEP_SUMMARY

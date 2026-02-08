@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Submit a Joke</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; background: #f5f5f5; }
+    h1 { color: #333; }
+    .card { background: #fff; border-radius: 8px; padding: 24px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    label { font-weight: bold; display: block; margin: 12px 0 4px; }
+    input, textarea, select { width: 100%; padding: 10px; font-size: 14px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; }
+    textarea { resize: vertical; min-height: 60px; }
+    button { padding: 12px 24px; font-size: 16px; border-radius: 4px; border: none; background: #28a745; color: #fff; cursor: pointer; margin-top: 16px; }
+    button:hover { background: #218838; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    #message { margin-top: 12px; font-weight: bold; }
+    .success { color: green; }
+    .error { color: red; }
+    .type-toggle { margin: 8px 0; font-size: 13px; color: #007bff; cursor: pointer; text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>📝 Submit a Joke</h1>
+  <div class="card">
+    <label for="setup">Setup:</label>
+    <textarea id="setup" placeholder="Why did the chicken cross the road?"></textarea>
+
+    <label for="punchline">Punchline:</label>
+    <textarea id="punchline" placeholder="To get to the other side!"></textarea>
+
+    <label for="typeSelect">Joke Type:</label>
+    <select id="typeSelect" onfocus="loadTypes()">
+      <option value="">-- Select a type --</option>
+    </select>
+    <div class="type-toggle" onclick="toggleNewType()">+ Add a new type</div>
+    <div id="newTypeDiv" style="display:none;">
+      <label for="newType">New Type Name:</label>
+      <input id="newType" type="text" placeholder="e.g. knock-knock">
+    </div>
+
+    <button onclick="submitJoke()">Submit Joke</button>
+    <div id="message"></div>
+  </div>
+
+  <script>
+    async function loadTypes() {
+      try {
+        const res = await fetch('/types');
+        const types = await res.json();
+        const sel = document.getElementById('typeSelect');
+        const current = sel.value;
+        sel.innerHTML = '<option value="">-- Select a type --</option>';
+        types.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = t.charAt(0).toUpperCase() + t.slice(1);
+          sel.appendChild(opt);
+        });
+        if (current) sel.value = current;
+      } catch (err) {
+        console.error('Failed to load types:', err);
+      }
+    }
+
+    function toggleNewType() {
+      const div = document.getElementById('newTypeDiv');
+      div.style.display = div.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function submitJoke() {
+      const setup = document.getElementById('setup').value.trim();
+      const punchline = document.getElementById('punchline').value.trim();
+      const selectedType = document.getElementById('typeSelect').value;
+      const newType = document.getElementById('newType').value.trim();
+      const msgDiv = document.getElementById('message');
+
+      const type = newType || selectedType;
+
+      // Prevent submission unless all fields are complete
+      if (!setup || !punchline || !type) {
+        msgDiv.textContent = 'Please fill in all fields (setup, punchline, and type).';
+        msgDiv.className = 'error';
+        return;
+      }
+
+      try {
+        const res = await fetch('/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ setup, punchline, type })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          msgDiv.textContent = 'Joke submitted successfully! It will be reviewed by a moderator.';
+          msgDiv.className = 'success';
+          document.getElementById('setup').value = '';
+          document.getElementById('punchline').value = '';
+          document.getElementById('newType').value = '';
+        } else {
+          msgDiv.textContent = data.error || 'Submission failed.';
+          msgDiv.className = 'error';
+        }
+      } catch (err) {
+        msgDiv.textContent = 'Error: ' + err.message;
+        msgDiv.className = 'error';
+      }
+    }
+
+    // Load types on page load
+    loadTypes();
+  </script>
+</body>
+</html>

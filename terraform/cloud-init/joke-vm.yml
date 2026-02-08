@@ -1,0 +1,134 @@
+#cloud-config
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose
+  - git
+  - curl
+  - unzip
+
+users:
+  - default
+  - name: deploy
+    groups: docker
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+
+runcmd:
+  # Start and enable Docker
+  - systemctl start docker
+  - systemctl enable docker
+  - usermod -aG docker azureuser
+  - usermod -aG docker deploy
+  
+  # Install Docker Compose (latest version)
+  - curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  - chmod +x /usr/local/bin/docker-compose
+  - ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+  
+  # Create application directory
+  - mkdir -p /app
+  - chown deploy:deploy /app
+  
+  # Create environment file
+  - echo "DB_TYPE=${db_type}" > /app/.env
+  - echo "RMQ_HOST=${rabbitmq_host}" >> /app/.env
+  - echo "MYSQL_ROOT_PASSWORD=${mysql_password}" >> /app/.env
+  - echo "MONGO_USERNAME=${mongo_username}" >> /app/.env
+  - echo "MONGO_PASSWORD=${mongo_password}" >> /app/.env
+  - chown deploy:deploy /app/.env
+  
+  # Create deployment script
+  - |
+    cat > /app/deploy.sh << 'EOF'
+    #!/bin/bash
+    set -e
+    cd /app
+    
+    # Pull latest code (will be replaced by CI/CD)
+    if [ ! -d "microservices" ]; then
+      echo "Waiting for application deployment..."
+      exit 0
+    fi
+    
+    cd microservices/joke-vm
+    
+    # Stop existing containers
+    docker-compose --profile ${db_type} down || true
+    
+    # Pull latest images
+    docker-compose --profile ${db_type} pull
+    
+    # Start services with selected database
+    docker-compose --profile ${db_type} up -d
+    
+    # Wait for services to be ready
+    sleep 30
+    
+    # Health check
+    curl -f http://localhost:4000/health || echo "Service not ready yet"
+    EOF
+  - chmod +x /app/deploy.sh
+  - chown deploy:deploy /app/deploy.sh
+  
+  # Create systemd service for auto-deployment
+  - |
+    cat > /etc/systemd/system/joke-service.service << 'EOF'
+    [Unit]
+    Description=Joke Microservice
+    After=docker.service
+    Requires=docker.service
+    
+    [Service]
+    Type=oneshot
+    ExecStart=/app/deploy.sh
+    User=deploy
+    Group=deploy
+    RemainAfterExit=yes
+    
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+  - systemctl daemon-reload
+  - systemctl enable joke-service
+  
+  # Create database switching script
+  - |
+    cat > /app/switch-database.sh << 'EOF'
+    #!/bin/bash
+    if [ "$#" -ne 1 ]; then
+      echo "Usage: $0 <mysql|mongo>"
+      exit 1
+    fi
+    
+    if [ "$1" != "mysql" ] && [ "$1" != "mongo" ]; then
+      echo "Database type must be 'mysql' or 'mongo'"
+      exit 1
+    fi
+    
+    cd /app/microservices/joke-vm
+    
+    # Update environment file
+    sed -i "s/DB_TYPE=.*/DB_TYPE=$1/" /app/.env
+    
+    # Stop current services
+    docker-compose down
+    
+    # Start with new database
+    docker-compose --profile $1 up -d
+    
+    echo "Switched to $1 database"
+    EOF
+  - chmod +x /app/switch-database.sh
+  - chown deploy:deploy /app/switch-database.sh
+
+write_files:
+  - path: /app/health-check.sh
+    content: |
+      #!/bin/bash
+      # Health check script for joke service
+      curl -f http://localhost:4000/health && \
+      curl -f http://localhost:4001/health && \
+      echo "All services healthy" || echo "Some services unhealthy"
+    permissions: '0755'
+    owner: deploy:deploy

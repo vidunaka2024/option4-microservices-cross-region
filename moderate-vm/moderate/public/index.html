@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Joke Moderation Dashboard - Authenticated</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            min-height: 100vh; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .navbar { 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            background: rgba(255,255,255,0.95) !important;
+            backdrop-filter: blur(10px);
+        }
+        .card { 
+            border: none; 
+            border-radius: 15px; 
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            background: rgba(255,255,255,0.95);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+        }
+        .btn { 
+            border-radius: 10px; 
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+        .form-control, .form-select { 
+            border-radius: 10px; 
+            border: 2px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+        .form-control:focus, .form-select:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        .badge { 
+            font-size: 0.9em; 
+            padding: 0.5em 0.8em;
+            border-radius: 8px;
+        }
+        .spinner-border { 
+            width: 2rem; 
+            height: 2rem; 
+        }
+        .stats-card {
+            background: linear-gradient(135deg, var(--bs-primary) 0%, var(--bs-info) 100%);
+            color: white;
+            border-radius: 15px;
+            transition: transform 0.3s ease;
+        }
+        .stats-card:hover {
+            transform: scale(1.05);
+        }
+        .glass-effect {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .pulse-animation {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-light">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold text-primary" href="#">
+                <i class="fas fa-shield-alt me-2"></i>
+                Joke Moderation Dashboard
+            </a>
+            <div class="navbar-nav ms-auto">
+                <div class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-user-circle me-1"></i>
+                        <span id="userName">Moderator</span>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="/profile" target="_blank">
+                            <i class="fas fa-user me-2"></i>Profile
+                        </a></li>
+                        <li><a class="dropdown-item" href="/status" target="_blank">
+                            <i class="fas fa-cog me-2"></i>System Status
+                        </a></li>
+                        <li><a class="dropdown-item" href="/docs" target="_blank">
+                            <i class="fas fa-book me-2"></i>API Docs
+                        </a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="/logout">
+                            <i class="fas fa-sign-out-alt me-2"></i>Logout
+                        </a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Alert Section -->
+        <div id="alertContainer"></div>
+
+        <!-- Statistics Dashboard -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title opacity-75">Moderated Today</h6>
+                                <h3 id="moderatedCount" class="fw-bold">0</h3>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-check-circle fa-2x opacity-75"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white" style="background: linear-gradient(135deg, #28a745, #20c997);">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title opacity-75">Approved</h6>
+                                <h3 id="approvedCount" class="fw-bold">0</h3>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-thumbs-up fa-2x opacity-75"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white" style="background: linear-gradient(135deg, #dc3545, #fd7e14);">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title opacity-75">Rejected</h6>
+                                <h3 id="rejectedCount" class="fw-bold">0</h3>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-thumbs-down fa-2x opacity-75"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white" style="background: linear-gradient(135deg, #ffc107, #fd7e14);">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title text-dark opacity-75">Queue Status</h6>
+                                <h5 id="queueStatus" class="text-dark">
+                                    <i class="fas fa-spinner fa-spin"></i> Checking...
+                                </h5>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-tasks fa-2x text-dark opacity-75"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Moderation Interface -->
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header text-white" style="background: linear-gradient(135deg, #667eea, #764ba2);">
+                        <h5 class="mb-0">
+                            <i class="fas fa-eye me-2"></i>
+                            Current Joke for Moderation
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="noJokeMessage" class="text-center py-5" style="display: none;">
+                            <div class="pulse-animation">
+                                <i class="fas fa-hourglass-half fa-4x text-muted mb-3"></i>
+                            </div>
+                            <h4 class="text-muted">No jokes pending moderation</h4>
+                            <p class="text-muted">Checking for new submissions every second...</p>
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+
+                        <div id="jokeContent" style="display: none;">
+                            <form id="moderationForm">
+                                <div class="mb-4">
+                                    <label for="setup" class="form-label fw-bold">
+                                        <i class="fas fa-play me-2 text-primary"></i>Setup:
+                                    </label>
+                                    <textarea class="form-control" id="setup" name="setup" rows="3" required
+                                              placeholder="Joke setup will appear here..."></textarea>
+                                </div>
+
+                                <div class="mb-4">
+                                    <label for="punchline" class="form-label fw-bold">
+                                        <i class="fas fa-laugh me-2 text-warning"></i>Punchline:
+                                    </label>
+                                    <textarea class="form-control" id="punchline" name="punchline" rows="2" required
+                                              placeholder="Punchline will appear here..."></textarea>
+                                </div>
+
+                                <div class="mb-4">
+                                    <label for="type" class="form-label fw-bold">
+                                        <i class="fas fa-tags me-2 text-info"></i>Joke Type:
+                                    </label>
+                                    <div class="input-group">
+                                        <select class="form-select" id="typeSelect" name="typeSelect">
+                                            <option value="">Select existing type...</option>
+                                        </select>
+                                        <input type="text" class="form-control" id="typeOverride" name="type" 
+                                               placeholder="Or enter custom type" required>
+                                    </div>
+                                    <div class="form-text">Choose from existing types or create a new one</div>
+                                </div>
+
+                                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                    <button type="button" class="btn btn-danger btn-lg" id="rejectBtn">
+                                        <i class="fas fa-times me-2"></i>Reject
+                                    </button>
+                                    <button type="button" class="btn btn-warning btn-lg" id="skipBtn">
+                                        <i class="fas fa-forward me-2"></i>Next
+                                    </button>
+                                    <button type="submit" class="btn btn-success btn-lg" id="approveBtn">
+                                        <i class="fas fa-check me-2"></i>Approve & Submit
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <!-- Available Types Card -->
+                <div class="card mb-3">
+                    <div class="card-header text-white" style="background: linear-gradient(135deg, #17a2b8, #20c997);">
+                        <h6 class="mb-0">
+                            <i class="fas fa-tags me-2"></i>
+                            Available Joke Types
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div id="typesList" class="d-flex flex-wrap gap-1">
+                            <span class="badge bg-secondary pulse-animation">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions Card -->
+                <div class="card mb-3">
+                    <div class="card-header bg-secondary text-white">
+                        <h6 class="mb-0">
+                            <i class="fas fa-bolt me-2"></i>
+                            Quick Actions
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-primary" id="refreshTypesBtn">
+                                <i class="fas fa-sync me-2"></i>Refresh Types
+                            </button>
+                            <button class="btn btn-outline-info" id="getNextJokeBtn">
+                                <i class="fas fa-arrow-right me-2"></i>Get Next Joke
+                            </button>
+                            <button class="btn btn-outline-warning" id="checkStatusBtn">
+                                <i class="fas fa-heartbeat me-2"></i>Check System Status
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Help Card -->
+                <div class="card">
+                    <div class="card-header bg-dark text-white">
+                        <h6 class="mb-0">
+                            <i class="fas fa-question-circle me-2"></i>
+                            Moderation Guidelines
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-unstyled mb-0">
+                            <li class="mb-2">
+                                <i class="fas fa-check text-success me-2"></i>
+                                Approve clean, funny jokes
+                            </li>
+                            <li class="mb-2">
+                                <i class="fas fa-edit text-info me-2"></i>
+                                Edit jokes to improve clarity
+                            </li>
+                            <li class="mb-2">
+                                <i class="fas fa-times text-danger me-2"></i>
+                                Reject inappropriate content
+                            </li>
+                            <li class="mb-2">
+                                <i class="fas fa-tags text-warning me-2"></i>
+                                Ensure correct categorization
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Toast Container -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+        <div id="statusToast" class="toast" role="alert">
+            <div class="toast-header">
+                <i id="toastIcon" class="fas fa-info-circle me-2"></i>
+                <strong id="toastTitle" class="me-auto">Status</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body" id="toastBody">
+                Status message
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Enhanced JavaScript with modern features and Auth0 integration
+        class ModerationDashboard {
+            constructor() {
+                this.pollingInterval = null;
+                this.stats = {
+                    moderated: 0,
+                    approved: 0,
+                    rejected: 0
+                };
+                this.init();
+            }
+
+            async init() {
+                await this.loadUserProfile();
+                await this.loadTypes();
+                await this.fetchJoke();
+                this.setupEventListeners();
+                this.updateStats();
+            }
+
+            async loadUserProfile() {
+                try {
+                    const response = await fetch('/profile');
+                    const profile = await response.json();
+                    if (profile.user) {
+                        document.getElementById('userName').textContent = 
+                            profile.user.name || profile.user.email || 'Moderator';
+                    }
+                } catch (error) {
+                    console.error('Failed to load user profile:', error);
+                }
+            }
+
+            setupEventListeners() {
+                document.getElementById('moderationForm').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    this.moderateJoke(true);
+                });
+
+                document.getElementById('rejectBtn').addEventListener('click', () => {
+                    this.moderateJoke(false);
+                });
+
+                document.getElementById('skipBtn').addEventListener('click', () => {
+                    this.fetchJoke();
+                });
+
+                document.getElementById('refreshTypesBtn').addEventListener('click', () => {
+                    this.loadTypes();
+                });
+
+                document.getElementById('getNextJokeBtn').addEventListener('click', () => {
+                    this.fetchJoke();
+                });
+
+                document.getElementById('checkStatusBtn').addEventListener('click', () => {
+                    this.checkSystemStatus();
+                });
+
+                document.getElementById('typeSelect').addEventListener('change', (e) => {
+                    if (e.target.value) {
+                        document.getElementById('typeOverride').value = e.target.value;
+                    }
+                });
+            }
+
+            async loadTypes() {
+                try {
+                    const response = await fetch('/types');
+                    const data = await response.json();
+                    const types = data.types || data;
+                    
+                    const select = document.getElementById('typeSelect');
+                    const current = select.value;
+                    select.innerHTML = '<option value="">Select existing type...</option>';
+                    
+                    types.forEach(type => {
+                        const option = document.createElement('option');
+                        option.value = type;
+                        option.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+                        select.appendChild(option);
+                    });
+
+                    if (current) select.value = current;
+
+                    // Update types display
+                    const typesList = document.getElementById('typesList');
+                    typesList.innerHTML = types.map(type => 
+                        `<span class="badge bg-info">${type}</span>`
+                    ).join('');
+
+                } catch (error) {
+                    console.error('Failed to load types:', error);
+                    this.showToast('Error', 'Failed to load joke types', 'error');
+                }
+            }
+
+            async fetchJoke() {
+                this.stopPolling();
+                this.updateQueueStatus('Checking...');
+
+                try {
+                    const response = await fetch('/moderate');
+                    const data = await response.json();
+
+                    if (data.message) {
+                        this.showNoJokeMessage();
+                        this.updateQueueStatus('Empty - Polling...');
+                        this.startPolling();
+                    } else {
+                        this.showJoke(data);
+                        this.updateQueueStatus('Active');
+                    }
+                } catch (error) {
+                    console.error('Error fetching joke:', error);
+                    this.showToast('Error', 'Failed to fetch joke', 'error');
+                    this.updateQueueStatus('Error');
+                    this.startPolling();
+                }
+            }
+
+            showJoke(joke) {
+                document.getElementById('setup').value = joke.setup || '';
+                document.getElementById('punchline').value = joke.punchline || '';
+                document.getElementById('typeOverride').value = '';
+
+                // Try to match type in dropdown
+                const typeVal = (joke.type || '').toLowerCase();
+                const select = document.getElementById('typeSelect');
+                if ([...select.options].some(o => o.value === typeVal)) {
+                    select.value = typeVal;
+                    document.getElementById('typeOverride').value = typeVal;
+                } else {
+                    select.value = '';
+                    document.getElementById('typeOverride').value = typeVal;
+                }
+
+                document.getElementById('noJokeMessage').style.display = 'none';
+                document.getElementById('jokeContent').style.display = 'block';
+                
+                this.showToast('New Joke', 'Joke loaded for moderation', 'info');
+            }
+
+            showNoJokeMessage() {
+                document.getElementById('jokeContent').style.display = 'none';
+                document.getElementById('noJokeMessage').style.display = 'block';
+            }
+
+            async moderateJoke(approved) {
+                const setup = document.getElementById('setup').value.trim();
+                const punchline = document.getElementById('punchline').value.trim();
+                const type = document.getElementById('typeOverride').value.trim();
+
+                if (approved && (!setup || !punchline || !type)) {
+                    this.showToast('Validation Error', 'Please fill in all fields before approving', 'error');
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/moderated', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ approved, setup, punchline, type })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.status === 'accepted' || approved) {
+                        this.stats.approved++;
+                        this.showToast('Success', 'Joke approved and forwarded!', 'success');
+                    } else {
+                        this.stats.rejected++;
+                        this.showToast('Rejected', 'Joke rejected', 'warning');
+                    }
+
+                    this.stats.moderated++;
+                    this.updateStats();
+
+                    // Fetch next joke after short delay
+                    setTimeout(() => this.fetchJoke(), 1000);
+
+                } catch (error) {
+                    console.error('Error moderating joke:', error);
+                    this.showToast('Error', 'Failed to moderate joke', 'error');
+                }
+            }
+
+            async checkSystemStatus() {
+                try {
+                    const response = await fetch('/status');
+                    const status = await response.json();
+                    
+                    const message = `
+                        RabbitMQ: ${status.rabbitmq} | 
+                        Cached Types: ${status.cachedTypes} | 
+                        User: ${status.user || 'Unknown'}
+                    `;
+                    
+                    this.showToast('System Status', message, 'info');
+                } catch (error) {
+                    this.showToast('Error', 'Failed to check system status', 'error');
+                }
+            }
+
+            startPolling() {
+                if (this.pollingInterval) return;
+                this.pollingInterval = setInterval(async () => {
+                    try {
+                        const response = await fetch('/moderate');
+                        const data = await response.json();
+                        if (!data.message) {
+                            this.stopPolling();
+                            this.showJoke(data);
+                        }
+                    } catch (error) {
+                        console.error('Polling error:', error);
+                    }
+                }, 1000);
+            }
+
+            stopPolling() {
+                if (this.pollingInterval) {
+                    clearInterval(this.pollingInterval);
+                    this.pollingInterval = null;
+                }
+            }
+
+            updateStats() {
+                document.getElementById('moderatedCount').textContent = this.stats.moderated;
+                document.getElementById('approvedCount').textContent = this.stats.approved;
+                document.getElementById('rejectedCount').textContent = this.stats.rejected;
+            }
+
+            updateQueueStatus(status) {
+                document.getElementById('queueStatus').innerHTML = status;
+            }
+
+            showToast(title, message, type = 'info') {
+                const toast = document.getElementById('statusToast');
+                const toastIcon = document.getElementById('toastIcon');
+                const toastTitle = document.getElementById('toastTitle');
+                const toastBody = document.getElementById('toastBody');
+
+                const icons = {
+                    info: 'fas fa-info-circle text-info',
+                    success: 'fas fa-check-circle text-success',
+                    warning: 'fas fa-exclamation-triangle text-warning',
+                    error: 'fas fa-times-circle text-danger'
+                };
+
+                toastIcon.className = icons[type] || icons.info;
+                toastTitle.textContent = title;
+                toastBody.textContent = message;
+
+                const bsToast = new bootstrap.Toast(toast);
+                bsToast.show();
+            }
+        }
+
+        // Initialize the dashboard when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new ModerationDashboard();
+        });
+    </script>
+</body>
+</html>

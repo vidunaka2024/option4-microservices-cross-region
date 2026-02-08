@@ -1,0 +1,28 @@
+# moderate-vm/docker-compose.yml
+# Hosts: moderate service container
+# Set RMQ_HOST to the private IP of the RabbitMQ VM
+
+version: '3.8'
+
+services:
+  moderate:
+    build: ./moderate
+    image: moderate-service
+    container_name: moderate-container
+    restart: always
+    ports:
+      - "4100:3100"
+    environment:
+      PORT: "3100"
+      RABBITMQ_URL: "amqp://${RMQ_HOST:-10.0.0.7}:5672"
+    volumes:
+      - types_volume:/data
+    networks:
+      - moderate-network
+
+networks:
+  moderate-network:
+    driver: bridge
+
+volumes:
+  types_volume:

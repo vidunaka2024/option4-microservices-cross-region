@@ -1,0 +1,28 @@
+# submit-vm/docker-compose.yml
+# Hosts: submit service container
+# Set RMQ_HOST to the private IP of the RabbitMQ VM
+
+version: '3.8'
+
+services:
+  submit:
+    build: ./submit
+    image: submit-service
+    container_name: submit-container
+    restart: always
+    ports:
+      - "4200:3200"
+    environment:
+      PORT: "3200"
+      RABBITMQ_URL: "amqp://${RMQ_HOST:-10.0.0.7}:5672"
+    volumes:
+      - types_volume:/data
+    networks:
+      - submit-network
+
+networks:
+  submit-network:
+    driver: bridge
+
+volumes:
+  types_volume:

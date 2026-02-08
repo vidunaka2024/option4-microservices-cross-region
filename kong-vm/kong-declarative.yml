@@ -1,0 +1,248 @@
+# kong-vm/kong-declarative.yml
+# Kong DB-less declarative config for Option 4 with SSL support
+#
+# UPDATE THESE IP ADDRESSES to your actual Azure VM private IPs:
+#   - Joke VM:     10.0.2.10
+#   - Moderate VM: 10.0.2.12  
+#   - Submit VM:   10.0.2.11
+#   - RabbitMQ VM: 10.0.2.7
+
+_format_version: "3.0"
+
+# SSL Certificates
+certificates:
+  - cert: |
+      -----BEGIN CERTIFICATE-----
+      -----BEGIN CERTIFICATE-----
+      MIIEFTCCAv2gAwIBAgIUMBYpHrVq+OX9QgYqM9cgsaMxpRUwDQYJKoZIhvcNAQEL
+      BQAwfjELMAkGA1UEBhMCVVMxDjAMBgNVBAgMBVN0YXRlMQ0wCwYDVQQHDARDaXR5
+      MRswGQYDVQQKDBJNaWNyb3NlcnZpY2VzIERlbW8xFjAUBgNVBAsMDUlUIERlcGFy
+      dG1lbnQxGzAZBgNVBAMMEmpva2UtZ2F0ZXdheS5sb2NhbDAeFw0yNjAyMDgwNDIx
+      NDRaFw0yNzAyMDgwNDIxNDRaMH4xCzAJBgNVBAYTAlVTMQ4wDAYDVQQIDAVTdGF0
+      ZTENMAsGA1UEBwwEQ2l0eTEbMBkGA1UECgwSTWljcm9zZXJ2aWNlcyBEZW1vMRYw
+      FAYDVQQLDA1JVCBEZXBhcnRtZW50MRswGQYDVQQDDBJqb2tlLWdhdGV3YXkubG9j
+      YWwwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDLeD3C4MnlZ5mMDE3t
+      pgXx6sSF5dCO/s3JekjPByxESc/NrctKrxIZ5hXMzXlijLKPkmAP2bIE8JlU7WQh
+      K/4rN8cwk58w1jv4LaE2YogziBxa/PPPrqEMxdRGV5aH/0DGA0l8nxpk6ev2XMK0
+      Hi1k+ihFVgX0V1F5dXadqFxlkc7L2KaeLA+vZ0Y71RvRY9OygA2Tnj+UwNaDnQOy
+      iGuKxkvO8VfgzXwVtxik6pih9tj9HIoTPNvzO8EN9nrIkSau1T0ceFNAGFvBH80k
+      pwjT1uSQ8nl+HmRb9pZwjRnCB2RyBMYbyN/7MIfls9Tl+ev1Ozrd+VF1OT2QjMbH
+      PxxLAgMBAAGjgYowgYcwCwYDVR0PBAQDAgQwMBMGA1UdJQQMMAoGCCsGAQUFBwMB
+      MEQGA1UdEQQ9MDuCEmpva2UtZ2F0ZXdheS5sb2NhbIIUKi5qb2tlLXNlcnZpY2Uu
+      bG9jYWyCCWxvY2FsaG9zdIcEfwAAATAdBgNVHQ4EFgQUi2gIxUzkRlq+/HQYCH8D
+      xoFT8r4wDQYJKoZIhvcNAQELBQADggEBAFauYxGkI/TpaUPm+gbyJLAH+AXNOhxs
+      zpS0ITAQVFLe7pxFLHEWumZOjlg6OV4Aj18piemsjdVOR6dZwZAFDjsy+hJmqnLa
+      /UBErvpS8zjxn1zhKS8ZVIbMc5Rl8+q/ymJosPTkNxpZaBY8j3Ybym9yW7BIqN+X
+      DDYdl/1jXvgghGvRW6/HY+YqbrhvnW/0UJrDj7Ds/43YwNaOmCKrsawS+fxKIb0n
+      5N0k2RpWoGyRzMDWGQSV4etkJYQDu8u3/KTdvMtLLlP4iJYW8UN4Y6pZ5ENFcrjZ
+      +J1s1AYdhR57BOueT3syZXltaNFv1zimLaaWY+Hj8itmZro4PjqL0uA=
+      -----END CERTIFICATE-----
+    key: |
+      -----BEGIN PRIVATE KEY-----
+      MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDLeD3C4MnlZ5mM
+      DE3tpgXx6sSF5dCO/s3JekjPByxESc/NrctKrxIZ5hXMzXlijLKPkmAP2bIE8JlU
+      7WQhK/4rN8cwk58w1jv4LaE2YogziBxa/PPPrqEMxdRGV5aH/0DGA0l8nxpk6ev2
+      XMK0Hi1k+ihFVgX0V1F5dXadqFxlkc7L2KaeLA+vZ0Y71RvRY9OygA2Tnj+UwNaD
+      nQOyiGuKxkvO8VfgzXwVtxik6pih9tj9HIoTPNvzO8EN9nrIkSau1T0ceFNAGFvB
+      H80kpwjT1uSQ8nl+HmRb9pZwjRnCB2RyBMYbyN/7MIfls9Tl+ev1Ozrd+VF1OT2Q
+      jMbHPxxLAgMBAAECggEAEfAsCGzMpULGHjs4JENWqIEpSfa8tYalpOV42suymDim
+      WedAZ3laJVoMF6NmgreNxyuWotRvUJEtAM2cXhz59QcfXVspFeNP+S1+ANnx+70R
+      vDyAeucAlYGGw/F/43CFCOVhoAY04QBgiGFIMcdWpYg1GbEfqEQ0eiVOy6UmtDYy
+      NjaOfsqHxrjThGUjCuTUd13KlJL9wS26LzNhR85BuJvBR58IywISgtOakbp0oSnT
+      gea6yzGbdi9KEzuqC3SYihxI+KXrFXhMmFXUn8bJt3tU0XQlmDWKUheIHRcMRCIP
+      Lh1TdGzzh9F9IjndkvnJt+j5ogj8xjOfZi3/Uc8HXQKBgQDkQE4AHtEwBsBC7jLe
+      DJctwlZ/VgGGfqzhmUYrzECNcJyFQETToqtsf/LAKz9xJqMLQGv/urrW+1wsfiZh
+      mXvmCNeBqzYHy/xk00P6tUmwQVORzGfv7T12pUY4CT79VpHH8htq9xkiTZN2r65L
+      P+MXmiEe4ANwPKO6CY/tRcghJQKBgQDkNK4aCvVqF9J5oXp6cFVQEcAmp/+HRRxl
+      WwvzPHx7NPwi/sHiRKq9lYpUcYAKy371cOnm/Pz8witRyEd+gH+vqndwzWpj0fMn
+      miLRnjOI9WtgcEzBkb54kRYD6lJqSgXF9qtliXev0flkFAfV8/NWktMXHELk7VUs
+      12y7nyZkrwKBgDv75kPD1YfAjnBIdxfByU0eQGsQaDA3RCm5hSZndCN3j7q5DB1u
+      J4zJBzuXYgHTfI+ta3R2Vzm+LxgGQwHtOxFWC4SpQPbFldvNZZUSZX4rfNHZHQuB
+      lmCCyLRbQbGEOaWJK8ltjK5mIrXTL4PZE04VlFSv3Fd3qDNw5eEeMJz9AoGALZgw
+      6NcjrWzRCqgutmPXR8YkJBUQwtAWGlIUkyaUoHE3py5LQpABpRtJphF/Saja1uMW
+      eKY3TbDlwtNHJYk6+bgPYSRJi2QZNuJe7o6zMTwHlh8Z1trtuV0Tjvi0OrRLbwAX
+      wpOyrBhBwbMW1bKF/dgcANQOsXqRuAHaoansm9UCgYBY4x3GtQWmkD+GZhOcZjnw
+      zWZulcGD8r4WRMgj/BGv4d1PFS5qsiDuPD5QpziGU23OOXrenlsA60Q4qlrUv+b5
+      VqyOm1FCm98eSonz59xcZjOAfgSBe4/ZQnCVyw3h+rhkX5EsGM1808YQqQTszQMj
+      4tNGWJOjkSuZyY1gNbmw+A==
+      -----END PRIVATE KEY-----
+    snis:
+      - "*.joke-service.local"
+      - "joke-service.local"
+      - "localhost"
+
+services:
+  # ---- Joke microservice (Cross-region: East US) ----
+  - name: joke-service
+    url: http://10.1.1.10:4000
+    routes:
+      - name: joke-api-route
+        paths:
+          - /api/jokes
+        methods:
+          - GET
+        strip_path: false
+        protocols:
+          - http
+          - https
+      - name: joke-types-route
+        paths:
+          - /api/types
+        methods:
+          - GET
+        strip_path: false
+        protocols:
+          - http
+          - https
+      - name: joke-health-route
+        paths:
+          - /health
+        strip_path: false
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 30
+          hour: 1000
+          policy: local
+      - name: cors
+        config:
+          origins:
+            - "*"
+          methods:
+            - GET
+            - POST
+            - OPTIONS
+          headers:
+            - Accept
+            - Content-Type
+            - Authorization
+
+  # ---- ETL microservice (Cross-region: East US) ----
+  - name: etl-service
+    url: http://10.1.1.10:4001
+    routes:
+      - name: etl-status-route
+        paths:
+          - /etl/status
+        strip_path: true
+        protocols:
+          - http
+          - https
+
+  # ---- Submit microservice (Cross-region: East US) ----  
+  - name: submit-service
+    url: http://10.1.1.11:4200
+    routes:
+      - name: submit-joke-route
+        paths:
+          - /submit/submit
+        methods:
+          - POST
+        strip_path: true
+        protocols:
+          - http
+          - https
+      - name: submit-types-route
+        paths:
+          - /submit/types
+        methods:
+          - GET
+        strip_path: true
+        protocols:
+          - http
+          - https
+      - name: submit-docs-route
+        paths:
+          - /submit/docs
+        strip_path: true
+        protocols:
+          - http
+          - https
+      - name: submit-health-route
+        paths:
+          - /submit/health
+        strip_path: true
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 20
+          hour: 500
+          policy: local
+
+  # ---- Moderate microservice (Cross-region: East US) ----
+  - name: moderate-service
+    url: http://10.1.1.12:3100
+    routes:
+      - name: moderate-dashboard-route
+        paths:
+          - /moderate
+        methods:
+          - GET
+        strip_path: true
+        protocols:
+          - http
+          - https
+      - name: moderate-api-route
+        paths:
+          - /moderate/moderate
+        methods:
+          - GET
+        strip_path: true
+        protocols:
+          - http
+          - https
+      - name: moderated-post-route
+        paths:
+          - /moderate/moderated
+        methods:
+          - POST
+        strip_path: true
+        protocols:
+          - http
+          - https
+      - name: moderate-types-route
+        paths:
+          - /moderate/types
+        methods:
+          - GET
+        strip_path: true
+        protocols:
+          - http
+          - https
+      - name: moderate-auth-routes
+        paths:
+          - /moderate/login
+          - /moderate/logout
+          - /moderate/callback
+          - /moderate/profile
+        strip_path: true
+        protocols:
+          - http
+          - https
+      - name: moderate-docs-route
+        paths:
+          - /moderate/docs
+        strip_path: true
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 15
+          hour: 300
+          policy: local
+
+# Global plugins
+plugins:
+  - name: prometheus
+    config:
+      per_consumer: true
+  - name: request-id
+  - name: correlation-id

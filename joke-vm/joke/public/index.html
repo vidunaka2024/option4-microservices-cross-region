@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Joke Service</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; background: #f5f5f5; }
+    h1 { color: #333; }
+    .card { background: #fff; border-radius: 8px; padding: 24px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    label { font-weight: bold; display: block; margin-bottom: 6px; }
+    select, button { padding: 10px 16px; font-size: 14px; border-radius: 4px; border: 1px solid #ccc; }
+    button { background: #007bff; color: #fff; border: none; cursor: pointer; margin-top: 10px; }
+    button:hover { background: #0056b3; }
+    #setup { font-size: 18px; margin: 16px 0 8px; color: #222; }
+    #punchline { font-size: 18px; color: #007bff; font-weight: bold; min-height: 28px; }
+    .hidden { visibility: hidden; }
+    #error { color: red; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>🃏 Joke Service</h1>
+  <div class="card">
+    <label for="typeSelect">Select Joke Type:</label>
+    <select id="typeSelect" onfocus="loadTypes()">
+      <option value="">-- Loading types --</option>
+    </select>
+    <br>
+    <button onclick="getJoke()">Get Joke</button>
+    <div id="error"></div>
+  </div>
+  <div class="card">
+    <div id="setup"></div>
+    <div id="punchline" class="hidden"></div>
+  </div>
+
+  <script>
+    async function loadTypes() {
+      try {
+        const res = await fetch('/types');
+        const types = await res.json();
+        const sel = document.getElementById('typeSelect');
+        sel.innerHTML = '<option value="any">Any</option>';
+        types.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = t.charAt(0).toUpperCase() + t.slice(1);
+          sel.appendChild(opt);
+        });
+      } catch (err) {
+        document.getElementById('error').textContent = 'Failed to load types: ' + err.message;
+      }
+    }
+
+    async function getJoke() {
+      const type = document.getElementById('typeSelect').value || 'any';
+      const errorDiv = document.getElementById('error');
+      const setupDiv = document.getElementById('setup');
+      const punchlineDiv = document.getElementById('punchline');
+      errorDiv.textContent = '';
+      setupDiv.textContent = '';
+      punchlineDiv.textContent = '';
+      punchlineDiv.classList.add('hidden');
+
+      try {
+        const res = await fetch('/joke/' + type);
+        const jokes = await res.json();
+        if (jokes.length === 0) {
+          errorDiv.textContent = 'No jokes found for this type.';
+          return;
+        }
+        const joke = jokes[0];
+        setupDiv.textContent = joke.setup;
+        // Display punchline after 3 seconds
+        setTimeout(() => {
+          punchlineDiv.textContent = joke.punchline;
+          punchlineDiv.classList.remove('hidden');
+        }, 3000);
+      } catch (err) {
+        errorDiv.textContent = 'Error fetching joke: ' + err.message;
+      }
+    }
+
+    // Load types on page load
+    loadTypes();
+  </script>
+</body>
+</html>

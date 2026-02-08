@@ -1,0 +1,31 @@
+# kong-vm/docker-compose.yml
+# Kong API Gateway - single public entry point
+# Routes to microservices via Azure private network
+
+version: '3.8'
+
+services:
+  kong:
+    image: kong:3.4
+    container_name: kong
+    restart: always
+    ports:
+      - "80:80"       # HTTP
+      - "443:443"     # HTTPS (SSL/TLS)
+      - "8445:8445"   # Admin API
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: "/etc/kong/kong-declarative.yml"
+      KONG_PROXY_LISTEN: "0.0.0.0:80, 0.0.0.0:443 ssl"
+      KONG_SSL_CERT: "/etc/kong/certs/fullchain.pem"
+      KONG_SSL_CERT_KEY: "/etc/kong/certs/privkey.pem"
+    volumes:
+      - ./kong-declarative.yml:/etc/kong/kong-declarative.yml:ro
+      - ./kong.conf:/etc/kong/kong.conf:ro
+      - ./certs:/etc/kong/certs:ro
+    networks:
+      - kong-network
+
+networks:
+  kong-network:
+    driver: bridge

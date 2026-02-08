@@ -1,0 +1,125 @@
+name: Switch Database Type
+
+on:
+  workflow_dispatch:
+    inputs:
+      db_type:
+        description: 'Database type to switch to'
+        required: true
+        type: choice
+        options:
+        - mysql
+        - mongo
+      environment:
+        description: 'Environment to update'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+
+env:
+  TF_VERSION: "1.5.0"
+  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+jobs:
+  switch-database:
+    name: 'Switch Database Configuration'
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    
+    - name: Terraform Init
+      run: terraform init
+      working-directory: terraform
+    
+    - name: Get current infrastructure state
+      id: current-state
+      run: |
+        echo "joke_vm_ip=$(terraform output -raw joke_vm_public_ip)" >> $GITHUB_OUTPUT
+        echo "current_db_type=$(terraform output -raw database_type)" >> $GITHUB_OUTPUT
+      working-directory: terraform
+    
+    - name: Validate database switch
+      run: |
+        if [ "${{ steps.current-state.outputs.current_db_type }}" == "${{ github.event.inputs.db_type }}" ]; then
+          echo "❌ Database is already set to ${{ github.event.inputs.db_type }}"
+          exit 1
+        fi
+        echo "✅ Switching from ${{ steps.current-state.outputs.current_db_type }} to ${{ github.event.inputs.db_type }}"
+    
+    - name: Install SSH Key
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        known_hosts: 'just-a-placeholder-so-we-dont-get-errors'
+    
+    - name: Adding Known Hosts
+      run: ssh-keyscan -H ${{ steps.current-state.outputs.joke_vm_ip }} >> ~/.ssh/known_hosts
+    
+    - name: Switch database on joke VM
+      run: |
+        ssh azureuser@${{ steps.current-state.outputs.joke_vm_ip }} << 'EOF'
+        echo "🔄 Switching database to ${{ github.event.inputs.db_type }}..."
+        sudo /app/switch-database.sh ${{ github.event.inputs.db_type }}
+        
+        echo "⏳ Waiting for services to restart..."
+        sleep 30
+        
+        echo "🏥 Running health check..."
+        /app/health-check.sh
+        
+        echo "✅ Database switch completed successfully!"
+        EOF
+    
+    - name: Update Terraform state
+      run: |
+        terraform apply -auto-approve \
+          -var="db_type=${{ github.event.inputs.db_type }}" \
+          -var="environment=${{ github.event.inputs.environment }}" \
+          -target=azurerm_linux_virtual_machine.joke_vm
+      working-directory: terraform
+    
+    - name: Verify database switch
+      run: |
+        # Wait a bit more for services to fully start
+        sleep 30
+        
+        # Test the joke service with the new database
+        RESPONSE=$(curl -s http://${{ steps.current-state.outputs.joke_vm_ip }}:4000/api/jokes/random || echo "FAILED")
+        
+        if [ "$RESPONSE" == "FAILED" ]; then
+          echo "❌ Service verification failed"
+          exit 1
+        else
+          echo "✅ Service is responding correctly with ${{ github.event.inputs.db_type }} database"
+        fi
+    
+    - name: Create switch summary
+      run: |
+        echo "## 🔄 Database Switch Summary" >> $GITHUB_STEP_SUMMARY
+        echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Previous Database | ${{ steps.current-state.outputs.current_db_type }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| New Database | ${{ github.event.inputs.db_type }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Environment | ${{ github.event.inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Joke Service URL | http://${{ steps.current-state.outputs.joke_vm_ip }}:4000 |" >> $GITHUB_STEP_SUMMARY
+        echo "| Switch Status | ✅ Successful |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "- Test the application with the new database configuration" >> $GITHUB_STEP_SUMMARY
+        echo "- Monitor service health and performance" >> $GITHUB_STEP_SUMMARY
+        echo "- Update any dependent services if necessary" >> $GITHUB_STEP_SUMMARY

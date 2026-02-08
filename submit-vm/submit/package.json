@@ -1,0 +1,15 @@
+{
+  "name": "submit-service",
+  "version": "1.0.0",
+  "description": "Submit microservice - accepts new jokes and publishes to RabbitMQ queue",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "amqplib": "^0.10.3",
+    "swagger-ui-express": "^4.6.3",
+    "swagger-jsdoc": "^6.2.8"
+  }
+}

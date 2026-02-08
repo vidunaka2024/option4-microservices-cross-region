@@ -1,0 +1,15 @@
+{
+  "name": "etl-service",
+  "version": "1.0.0",
+  "description": "ETL service - consumes moderated jokes from RabbitMQ, writes to DB, publishes type_update events",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "amqplib": "^0.10.3",
+    "mongoose": "^6.9.0",
+    "mysql2": "^3.2.0"
+  }
+}

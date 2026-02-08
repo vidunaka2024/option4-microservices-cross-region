@@ -1,0 +1,87 @@
+# joke-vm/docker-compose.yml
+# Hosts: joke service, ETL service, MongoDB OR MySQL
+# Set DB_TYPE=mongo or DB_TYPE=mysql in .env file to choose database
+# Set RMQ_HOST to the private IP of the RabbitMQ VM
+
+version: '3.8'
+
+services:
+  joke:
+    build: ./joke
+    image: joke-service
+    container_name: joke-container
+    restart: always
+    ports:
+      - "4000:3000"
+    environment:
+      PORT: "3000"
+      DB_TYPE: "${DB_TYPE:-mongo}"
+      MONGO_URI: "mongodb://mongo:27017/jokes"
+      MYSQL_HOST: "mysql"
+      MYSQL_USER: "root"
+      MYSQL_PASSWORD: "password"
+      MYSQL_DATABASE: "jokes"
+    networks:
+      - joke-network
+    depends_on:
+      - mongo
+      - mysql
+
+  etl:
+    build: ./etl
+    image: etl-service
+    container_name: etl-container
+    restart: always
+    ports:
+      - "4001:3001"
+    environment:
+      PORT: "3001"
+      DB_TYPE: "${DB_TYPE:-mongo}"
+      MONGO_URI: "mongodb://mongo:27017/jokes"
+      MYSQL_HOST: "mysql"
+      MYSQL_USER: "root"
+      MYSQL_PASSWORD: "password"
+      MYSQL_DATABASE: "jokes"
+      RABBITMQ_URL: "amqp://${RMQ_HOST:-10.0.0.7}:5672"
+    networks:
+      - joke-network
+    depends_on:
+      - mongo
+      - mysql
+
+  mongo:
+    image: mongo:6
+    container_name: mongo
+    restart: always
+    ports:
+      - "4002:27017"
+    volumes:
+      - mongo_vol:/data/db
+    networks:
+      - joke-network
+    profiles:
+      - mongo
+
+  mysql:
+    image: mysql:8
+    container_name: mysql
+    restart: always
+    ports:
+      - "4002:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: jokes
+    volumes:
+      - mysql_vol:/var/lib/mysql
+    networks:
+      - joke-network
+    profiles:
+      - mysql
+
+networks:
+  joke-network:
+    driver: bridge
+
+volumes:
+  mongo_vol:
+  mysql_vol:

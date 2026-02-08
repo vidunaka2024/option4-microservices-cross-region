@@ -1,0 +1,96 @@
+#cloud-config
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose
+  - git
+  - curl
+  - unzip
+
+users:
+  - default
+  - name: deploy
+    groups: docker
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+
+runcmd:
+  # Start and enable Docker
+  - systemctl start docker
+  - systemctl enable docker
+  - usermod -aG docker azureuser
+  - usermod -aG docker deploy
+  
+  # Install Docker Compose
+  - curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  - chmod +x /usr/local/bin/docker-compose
+  - ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+  
+  # Create application directory
+  - mkdir -p /app
+  - chown deploy:deploy /app
+  
+  # Create environment file
+  - echo "RMQ_HOST=${rabbitmq_host}" > /app/.env
+  - chown deploy:deploy /app/.env
+  
+  # Create deployment script
+  - |
+    cat > /app/deploy.sh << 'EOF'
+    #!/bin/bash
+    set -e
+    cd /app
+    
+    if [ ! -d "microservices" ]; then
+      echo "Waiting for application deployment..."
+      exit 0
+    fi
+    
+    cd microservices/moderate-vm
+    
+    # Stop existing containers
+    docker-compose down || true
+    
+    # Pull latest images
+    docker-compose pull
+    
+    # Start services
+    docker-compose up -d
+    
+    # Wait for services to be ready
+    sleep 20
+    
+    # Health check
+    curl -f http://localhost:4100/health || echo "Service not ready yet"
+    EOF
+  - chmod +x /app/deploy.sh
+  - chown deploy:deploy /app/deploy.sh
+  
+  # Create systemd service
+  - |
+    cat > /etc/systemd/system/moderate-service.service << 'EOF'
+    [Unit]
+    Description=Moderate Microservice
+    After=docker.service
+    Requires=docker.service
+    
+    [Service]
+    Type=oneshot
+    ExecStart=/app/deploy.sh
+    User=deploy
+    Group=deploy
+    RemainAfterExit=yes
+    
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+  - systemctl daemon-reload
+  - systemctl enable moderate-service
+
+write_files:
+  - path: /app/health-check.sh
+    content: |
+      #!/bin/bash
+      curl -f http://localhost:4100/health && echo "Moderate service healthy" || echo "Moderate service unhealthy"
+    permissions: '0755'
+    owner: deploy:deploy
