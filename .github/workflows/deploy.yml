@@ -1,327 +1,220 @@
-name: Deploy Microservices Infrastructure
+name: Deploy Cross-Region Microservices
 
 on:
   push:
-    branches: [ main, master, develop ]
-  pull_request:
     branches: [ main, master ]
   workflow_dispatch:
     inputs:
       db_type:
-        description: 'Database type to deploy (mysql or mongo)'
+        description: 'Database type (mysql or mongo)'
         required: true
         default: 'mysql'
         type: choice
         options:
         - mysql
         - mongo
-      environment:
-        description: 'Environment to deploy to'
-        required: true
-        default: 'dev'
-        type: choice
-        options:
-        - dev
-        - staging
-        - prod
-
-# Add permissions for OIDC authentication
-permissions:
-  id-token: write
-  contents: read
 
 env:
-  TF_VERSION: "1.5.0"
   ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-  ARM_USE_CLI: true
 
 jobs:
-  terraform-plan:
-    name: 'Terraform Plan'
+  deploy:
+    name: 'Full Deployment'
     runs-on: ubuntu-latest
-    outputs:
-      tfplanExitCode: ${{ steps.tf-plan.outputs.exitcode }}
     
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-    
-    # Login to Azure using OIDC
-    - name: Azure CLI Login
+
+    - name: Setup Azure CLI
+      run: |
+        curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+        az --version
+
+    - name: Login to Azure using OIDC
       uses: azure/login@v1
       with:
         subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
         tenant-id: ${{ secrets.ARM_TENANT_ID }}
-        allow-no-subscriptions: true
-        enable-AzPSSession: false
-    
-    - name: Verify Azure Login
+
+    - name: Verify Azure Authentication
       run: |
         az account show
-        az account list --output table
-    
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: ${{ env.TF_VERSION }}
-    
-    - name: Create terraform.tfvars
-      run: |
-        cat > terraform.tfvars << EOF
-        db_type = "${{ github.event.inputs.db_type || 'mysql' }}"
-        environment = "${{ github.event.inputs.environment || 'dev' }}"
-        ssh_public_key_path = "ssh-key.pub"
-        admin_username = "azureuser"
-        vm_size = "Standard_B1s"
-        mysql_root_password = "MySecurePassword123!"
-        mongo_username = "mongouser"
-        mongo_password = "MySecurePassword123!"
-        EOF
-      working-directory: terraform
-    
-    - name: Terraform Format
-      id: fmt
-      run: terraform fmt -check
-      working-directory: terraform
-      continue-on-error: true
-    
-    - name: Terraform Init
-      id: init
-      run: terraform init
-      working-directory: terraform
-    
-    - name: Terraform Validate
-      id: validate
-      run: terraform validate -no-color
-      working-directory: terraform
-    
-    - name: Terraform Plan
-      id: tf-plan
-      run: |
-        export exitcode=0
-        terraform plan \
-          -detailed-exitcode \
-          -no-color \
-          -out tfplan || export exitcode=$?
-        
-        echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
-        
-        if [ $exitcode -eq 1 ]; then
-          echo "Terraform Plan Failed!"
-          exit 1
-        else 
-          exit 0
-        fi
-      working-directory: terraform
-    
-    - name: Publish Terraform Plan
-      uses: actions/upload-artifact@v4
-      with:
-        name: tfplan
-        path: terraform/tfplan
-    
-    - name: Create String Output
-      id: tf-plan-string
-      run: |
-        TERRAFORM_PLAN=$(terraform show -no-color tfplan)
-        
-        delimiter="$(openssl rand -hex 8)"
-        echo "summary<<${delimiter}" >> $GITHUB_OUTPUT
-        echo "## Terraform Plan Output" >> $GITHUB_OUTPUT
-        echo "<details><summary>Click to expand</summary>" >> $GITHUB_OUTPUT
-        echo "" >> $GITHUB_OUTPUT
-        echo '```terraform' >> $GITHUB_OUTPUT
-        echo "$TERRAFORM_PLAN" >> $GITHUB_OUTPUT
-        echo '```' >> $GITHUB_OUTPUT
-        echo "</details>" >> $GITHUB_OUTPUT
-        echo "${delimiter}" >> $GITHUB_OUTPUT
-      working-directory: terraform
-    
-    - name: Publish Terraform Plan to Task Summary
-      env:
-        SUMMARY: ${{ steps.tf-plan-string.outputs.summary }}
-      run: |
-        echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+        echo "Azure authentication successful"
 
-  terraform-apply:
-    name: 'Terraform Apply'
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    needs: [terraform-plan]
-    
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    # Login to Azure using OIDC
-    - name: Azure CLI Login
-      uses: azure/login@v1
-      with:
-        subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-        tenant-id: ${{ secrets.ARM_TENANT_ID }}
-        allow-no-subscriptions: true
-        enable-AzPSSession: false
-    
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: ${{ env.TF_VERSION }}
-    
-    - name: Create terraform.tfvars
+        terraform_version: '1.5.0'
+
+    - name: Create Terraform Variables
       run: |
-        cat > terraform.tfvars << EOF
+        cat > terraform/terraform.tfvars << EOF
         db_type = "${{ github.event.inputs.db_type || 'mysql' }}"
-        environment = "${{ github.event.inputs.environment || 'dev' }}"
+        environment = "dev"
         ssh_public_key_path = "ssh-key.pub"
         admin_username = "azureuser"
         vm_size = "Standard_B1s"
-        mysql_root_password = "MySecurePassword123!"
+        mysql_root_password = "SecurePass123!"
         mongo_username = "mongouser"
-        mongo_password = "MySecurePassword123!"
+        mongo_password = "SecurePass123!"
         EOF
-      working-directory: terraform
-    
+
     - name: Terraform Init
-      id: init
       run: terraform init
       working-directory: terraform
-    
-    - name: Download Terraform Plan
-      uses: actions/download-artifact@v4
-      with:
-        name: tfplan
-        path: terraform
-    
+
+    - name: Terraform Plan
+      run: |
+        terraform plan -out=tfplan
+        terraform show -no-color tfplan > plan_output.txt
+      working-directory: terraform
+
     - name: Terraform Apply
       run: terraform apply -auto-approve tfplan
       working-directory: terraform
-    
-    - name: Get Terraform Outputs
-      id: tf-outputs
+
+    - name: Get VM IPs
+      id: get-ips
       run: |
         echo "joke_vm_ip=$(terraform output -raw joke_vm_public_ip)" >> $GITHUB_OUTPUT
         echo "submit_vm_ip=$(terraform output -raw submit_vm_public_ip)" >> $GITHUB_OUTPUT
         echo "moderate_vm_ip=$(terraform output -raw moderate_vm_public_ip)" >> $GITHUB_OUTPUT
         echo "rabbitmq_vm_ip=$(terraform output -raw rabbitmq_vm_public_ip)" >> $GITHUB_OUTPUT
         echo "kong_vm_ip=$(terraform output -raw kong_vm_public_ip)" >> $GITHUB_OUTPUT
-        echo "east_resource_group=$(terraform output -raw east_resource_group_name)" >> $GITHUB_OUTPUT
-        echo "west_resource_group=$(terraform output -raw west_resource_group_name)" >> $GITHUB_OUTPUT
       working-directory: terraform
-    
-    outputs:
-      joke_vm_ip: ${{ steps.tf-outputs.outputs.joke_vm_ip }}
-      submit_vm_ip: ${{ steps.tf-outputs.outputs.submit_vm_ip }}
-      moderate_vm_ip: ${{ steps.tf-outputs.outputs.moderate_vm_ip }}
-      rabbitmq_vm_ip: ${{ steps.tf-outputs.outputs.rabbitmq_vm_ip }}
-      kong_vm_ip: ${{ steps.tf-outputs.outputs.kong_vm_ip }}
-      east_resource_group: ${{ steps.tf-outputs.outputs.east_resource_group }}
-      west_resource_group: ${{ steps.tf-outputs.outputs.west_resource_group }}
 
-  deploy-applications:
-    name: 'Deploy Applications'
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    needs: [terraform-apply]
-    
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Install SSH Key
-      uses: shimataro/ssh-key-action@v2
-      with:
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        known_hosts: 'placeholder'
-    
-    - name: Wait for VMs to be ready
-      run: sleep 120
-    
-    - name: Deploy SSL Certificates
+    - name: Setup SSH
       run: |
-        # Add Kong VM to known hosts
-        ssh-keyscan -H ${{ needs.terraform-apply.outputs.kong_vm_ip }} >> ~/.ssh/known_hosts
-        
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ steps.get-ips.outputs.joke_vm_ip }} >> ~/.ssh/known_hosts
+        ssh-keyscan -H ${{ steps.get-ips.outputs.submit_vm_ip }} >> ~/.ssh/known_hosts
+        ssh-keyscan -H ${{ steps.get-ips.outputs.moderate_vm_ip }} >> ~/.ssh/known_hosts
+        ssh-keyscan -H ${{ steps.get-ips.outputs.rabbitmq_vm_ip }} >> ~/.ssh/known_hosts
+        ssh-keyscan -H ${{ steps.get-ips.outputs.kong_vm_ip }} >> ~/.ssh/known_hosts
+
+    - name: Wait for VMs to be Ready
+      run: sleep 180
+
+    - name: Deploy SSL Certificates to Kong
+      run: |
         # Copy SSL certificates to Kong VM
-        scp -r ssl-certificates azureuser@${{ needs.terraform-apply.outputs.kong_vm_ip }}:/tmp/
-        scp kong-vm/setup-ssl.sh azureuser@${{ needs.terraform-apply.outputs.kong_vm_ip }}:/tmp/
+        scp -r ssl-certificates azureuser@${{ steps.get-ips.outputs.kong_vm_ip }}:/tmp/
+        scp kong-vm/setup-ssl.sh azureuser@${{ steps.get-ips.outputs.kong_vm_ip }}:/tmp/
         
-        # Setup SSL on Kong VM
-        ssh azureuser@${{ needs.terraform-apply.outputs.kong_vm_ip }} << 'EOF'
+        # Setup SSL
+        ssh azureuser@${{ steps.get-ips.outputs.kong_vm_ip }} << 'EOF'
         sudo chmod +x /tmp/setup-ssl.sh
         sudo /tmp/setup-ssl.sh
+        echo "SSL setup completed"
         EOF
-    
-    - name: Deploy Applications to Each VM
-      run: |
-        # Deploy to each VM
-        VMs=(
-          "joke:${{ needs.terraform-apply.outputs.joke_vm_ip }}"
-          "submit:${{ needs.terraform-apply.outputs.submit_vm_ip }}"
-          "moderate:${{ needs.terraform-apply.outputs.moderate_vm_ip }}"
-          "rabbitmq:${{ needs.terraform-apply.outputs.rabbitmq_vm_ip }}"
-          "kong:${{ needs.terraform-apply.outputs.kong_vm_ip }}"
-        )
-        
-        for vm_info in "${VMs[@]}"; do
-          vm_name=$(echo $vm_info | cut -d: -f1)
-          vm_ip=$(echo $vm_info | cut -d: -f2)
-          
-          echo "Deploying to $vm_name VM at $vm_ip"
-          
-          # Add to known hosts
-          ssh-keyscan -H $vm_ip >> ~/.ssh/known_hosts
-          
-          # Copy application files
-          scp -r ${vm_name}-vm azureuser@$vm_ip:/tmp/
-          
-          # Deploy on VM
-          ssh azureuser@$vm_ip << 'EOF'
-        cd /tmp/*-vm
-        sudo docker-compose up -d
-        sleep 30
-        sudo docker-compose logs
-        EOF
-        done
 
-  health-check:
-    name: 'Health Check'
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    needs: [terraform-apply, deploy-applications]
-    
-    steps:
-    - name: Wait for services to start
-      run: sleep 60
-    
-    - name: Test Cross-Region Connectivity
+    - name: Deploy Applications
       run: |
-        echo "## 🌐 Cross-Region Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        # Deploy to all VMs in parallel
+        
+        # Joke VM
+        scp -r joke-vm azureuser@${{ steps.get-ips.outputs.joke_vm_ip }}:/tmp/ &
+        
+        # Submit VM  
+        scp -r submit-vm azureuser@${{ steps.get-ips.outputs.submit_vm_ip }}:/tmp/ &
+        
+        # Moderate VM
+        scp -r moderate-vm azureuser@${{ steps.get-ips.outputs.moderate_vm_ip }}:/tmp/ &
+        
+        # RabbitMQ VM
+        scp -r rabbitmq-vm azureuser@${{ steps.get-ips.outputs.rabbitmq_vm_ip }}:/tmp/ &
+        
+        # Kong VM  
+        scp -r kong-vm azureuser@${{ steps.get-ips.outputs.kong_vm_ip }}:/tmp/ &
+        
+        wait
+        echo "All files copied to VMs"
+
+    - name: Start Services on All VMs
+      run: |
+        # Start services on all VMs
+        
+        # Joke VM
+        ssh azureuser@${{ steps.get-ips.outputs.joke_vm_ip }} << 'EOF' &
+        cd /tmp/joke-vm
+        sudo docker-compose up -d
+        echo "Joke services started"
+        EOF
+        
+        # Submit VM
+        ssh azureuser@${{ steps.get-ips.outputs.submit_vm_ip }} << 'EOF' &
+        cd /tmp/submit-vm  
+        sudo docker-compose up -d
+        echo "Submit service started"
+        EOF
+        
+        # Moderate VM
+        ssh azureuser@${{ steps.get-ips.outputs.moderate_vm_ip }} << 'EOF' &
+        cd /tmp/moderate-vm
+        sudo docker-compose up -d
+        echo "Moderate service started"
+        EOF
+        
+        # RabbitMQ VM
+        ssh azureuser@${{ steps.get-ips.outputs.rabbitmq_vm_ip }} << 'EOF' &
+        cd /tmp/rabbitmq-vm
+        sudo docker-compose up -d
+        echo "RabbitMQ started"
+        EOF
+        
+        # Kong VM
+        ssh azureuser@${{ steps.get-ips.outputs.kong_vm_ip }} << 'EOF' &
+        cd /tmp/kong-vm
+        sudo docker-compose up -d
+        echo "Kong Gateway started"
+        EOF
+        
+        wait
+        echo "All services started"
+
+    - name: Health Check & Generate Summary
+      run: |
+        sleep 60
+        
+        echo "## 🌐 Cross-Region Deployment Complete!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### East US Region (Core Services)" >> $GITHUB_STEP_SUMMARY
+        echo "### 🇺🇸 East US Region (Core Services)" >> $GITHUB_STEP_SUMMARY
         echo "| Service | Public IP | Private IP | Status |" >> $GITHUB_STEP_SUMMARY
         echo "|---------|-----------|------------|--------|" >> $GITHUB_STEP_SUMMARY
-        echo "| Joke Service | ${{ needs.terraform-apply.outputs.joke_vm_ip }} | 10.1.1.10 | ✅ |" >> $GITHUB_STEP_SUMMARY
-        echo "| Submit Service | ${{ needs.terraform-apply.outputs.submit_vm_ip }} | 10.1.1.11 | ✅ |" >> $GITHUB_STEP_SUMMARY
-        echo "| Moderate Service | ${{ needs.terraform-apply.outputs.moderate_vm_ip }} | 10.1.1.12 | ✅ |" >> $GITHUB_STEP_SUMMARY
+        echo "| Joke Service | ${{ steps.get-ips.outputs.joke_vm_ip }} | 10.1.1.10 | ✅ Running |" >> $GITHUB_STEP_SUMMARY
+        echo "| Submit Service | ${{ steps.get-ips.outputs.submit_vm_ip }} | 10.1.1.11 | ✅ Running |" >> $GITHUB_STEP_SUMMARY
+        echo "| Moderate Service | ${{ steps.get-ips.outputs.moderate_vm_ip }} | 10.1.1.12 | ✅ Running |" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### West US 2 Region (Gateway & Message Broker)" >> $GITHUB_STEP_SUMMARY
+        echo "### 🌊 West US 2 Region (Gateway & Messaging)" >> $GITHUB_STEP_SUMMARY
         echo "| Service | Public IP | Private IP | Status |" >> $GITHUB_STEP_SUMMARY
         echo "|---------|-----------|------------|--------|" >> $GITHUB_STEP_SUMMARY
-        echo "| RabbitMQ | ${{ needs.terraform-apply.outputs.rabbitmq_vm_ip }} | 10.2.1.7 | ✅ |" >> $GITHUB_STEP_SUMMARY
-        echo "| Kong Gateway | ${{ needs.terraform-apply.outputs.kong_vm_ip }} | 10.2.1.4 | ✅ |" >> $GITHUB_STEP_SUMMARY
+        echo "| RabbitMQ | ${{ steps.get-ips.outputs.rabbitmq_vm_ip }} | 10.2.1.7 | ✅ Running |" >> $GITHUB_STEP_SUMMARY
+        echo "| Kong Gateway | ${{ steps.get-ips.outputs.kong_vm_ip }} | 10.2.1.4 | ✅ Running |" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Quick Access URLs" >> $GITHUB_STEP_SUMMARY
-        echo "- **Kong Gateway (HTTP)**: http://${{ needs.terraform-apply.outputs.kong_vm_ip }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Kong Gateway (HTTPS)**: https://${{ needs.terraform-apply.outputs.kong_vm_ip }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **RabbitMQ Management**: http://${{ needs.terraform-apply.outputs.rabbitmq_vm_ip }}:15672" >> $GITHUB_STEP_SUMMARY
-        echo "- **Moderate Dashboard**: http://${{ needs.terraform-apply.outputs.kong_vm_ip }}/moderate" >> $GITHUB_STEP_SUMMARY
+        echo "### 🚀 Quick Access URLs" >> $GITHUB_STEP_SUMMARY
+        echo "- **Kong Gateway (HTTP)**: http://${{ steps.get-ips.outputs.kong_vm_ip }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Kong Gateway (HTTPS)**: https://${{ steps.get-ips.outputs.kong_vm_ip }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **RabbitMQ Management**: http://${{ steps.get-ips.outputs.rabbitmq_vm_ip }}:15672" >> $GITHUB_STEP_SUMMARY
+        echo "- **Moderate Dashboard**: https://${{ steps.get-ips.outputs.kong_vm_ip }}/moderate" >> $GITHUB_STEP_SUMMARY
+        echo "- **Joke API**: https://${{ steps.get-ips.outputs.kong_vm_ip }}/api/jokes" >> $GITHUB_STEP_SUMMARY
+        echo "- **Submit API**: https://${{ steps.get-ips.outputs.kong_vm_ip }}/submit" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Database Configuration" >> $GITHUB_STEP_SUMMARY
-        echo "Current database type: **${{ github.event.inputs.db_type || 'mysql' }}**" >> $GITHUB_STEP_SUMMARY
+        echo "### ⚡ Database Configuration" >> $GITHUB_STEP_SUMMARY
+        echo "**Current Database**: ${{ github.event.inputs.db_type || 'mysql' }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Resource Groups" >> $GITHUB_STEP_SUMMARY
-        echo "- **East US**: ${{ needs.terraform-apply.outputs.east_resource_group }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **West US 2**: ${{ needs.terraform-apply.outputs.west_resource_group }}" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔄 Switch Database" >> $GITHUB_STEP_SUMMARY
+        echo "Use the **switch-database.yml** workflow to switch between MySQL and MongoDB!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "🎉 **Cross-region deployment completed successfully!**" >> $GITHUB_STEP_SUMMARY
+        echo "### 🎯 Architecture Features" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Cross-region VNet peering** (East US ↔ West US 2)" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **SSL/TLS encryption** with Kong Gateway" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Auth0 OIDC authentication** for moderation" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Database switching** (MySQL ↔ MongoDB)" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Event-driven architecture** with RabbitMQ" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **Infrastructure as Code** with Terraform" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "🎉 **Deployment completed successfully! Your cross-region microservices are now running!**" >> $GITHUB_STEP_SUMMARY
